@@ -3,43 +3,18 @@
 
 use std::os::unix::io::AsRawFd;
 
-use logger::{debug, error, warn, IncMetric, METRICS};
+use logger::{warn, IncMetric, METRICS};
 use polly::event_manager::{EventManager, Subscriber};
 use utils::epoll::{EpollEvent, EventSet};
 
 use crate::virtio::net::device::Net;
+use crate::virtio::subscriber_device::SubscriberVirtioDevice;
 use crate::virtio::{VirtioDevice, RX_INDEX, TX_INDEX};
+use ::utils::eventfd::EventFd;
 
-impl Net {
-    fn process_activate_event(&self, event_manager: &mut EventManager) {
-        debug!("net: activate event");
-        if let Err(e) = self.activate_evt.read() {
-            error!("Failed to consume net activate event: {:?}", e);
-        }
-        let activate_fd = self.activate_evt.as_raw_fd();
-        // The subscriber must exist as we previously registered activate_evt via
-        // `interest_list()`.
-        let self_subscriber = match event_manager.subscriber(activate_fd) {
-            Ok(subscriber) => subscriber,
-            Err(e) => {
-                error!("Failed to process block activate evt: {:?}", e);
-                return;
-            }
-        };
-
-        // Interest list changes when the device is activated.
-        let interest_list = self.interest_list();
-        for event in interest_list {
-            event_manager
-                .register(event.data() as i32, event, self_subscriber.clone())
-                .unwrap_or_else(|e| {
-                    error!("Failed to register net events: {:?}", e);
-                });
-        }
-
-        event_manager.unregister(activate_fd).unwrap_or_else(|e| {
-            error!("Failed to unregister net activate evt: {:?}", e);
-        });
+impl SubscriberVirtioDevice for Net {
+    fn activate_fd(&self) -> &EventFd {
+        &self.activate_evt
     }
 }
 

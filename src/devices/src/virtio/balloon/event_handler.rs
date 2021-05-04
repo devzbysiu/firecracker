@@ -3,45 +3,20 @@
 
 use std::os::unix::io::AsRawFd;
 
-use logger::{debug, error, warn};
+use logger::warn;
 use polly::event_manager::{EventManager, Subscriber};
 use utils::epoll::{EpollEvent, EventSet};
 
 use crate::report_balloon_event_fail;
+use crate::virtio::subscriber_device::SubscriberVirtioDevice;
 use crate::virtio::{
     balloon::device::Balloon, VirtioDevice, DEFLATE_INDEX, INFLATE_INDEX, STATS_INDEX,
 };
+use ::utils::eventfd::EventFd;
 
-impl Balloon {
-    fn process_activate_event(&self, event_manager: &mut EventManager) {
-        debug!("balloon: activate event");
-        if let Err(e) = self.activate_evt.read() {
-            error!("Failed to consume balloon activate event: {:?}", e);
-        }
-        let activate_fd = self.activate_evt.as_raw_fd();
-        // The subscriber must exist as we previously registered activate_evt via
-        // `interest_list()`.
-        let self_subscriber = match event_manager.subscriber(activate_fd) {
-            Ok(subscriber) => subscriber,
-            Err(e) => {
-                error!("Failed to process balloon activate evt: {:?}", e);
-                return;
-            }
-        };
-
-        // Interest list changes when the device is activated.
-        let interest_list = self.interest_list();
-        for event in interest_list {
-            event_manager
-                .register(event.data() as i32, event, self_subscriber.clone())
-                .unwrap_or_else(|e| {
-                    error!("Failed to register balloon events: {:?}", e);
-                });
-        }
-
-        event_manager.unregister(activate_fd).unwrap_or_else(|e| {
-            error!("Failed to unregister balloon activate evt: {:?}", e);
-        });
+impl SubscriberVirtioDevice for Balloon {
+    fn activate_fd(&self) -> &EventFd {
+        &self.activate_evt
     }
 }
 

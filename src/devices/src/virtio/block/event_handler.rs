@@ -2,43 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 use std::os::unix::io::AsRawFd;
 
-use logger::{debug, error, warn};
+use logger::warn;
 use polly::event_manager::{EventManager, Subscriber};
 use utils::epoll::{EpollEvent, EventSet};
 
 use crate::virtio::block::device::Block;
+use crate::virtio::subscriber_device::SubscriberVirtioDevice;
 use crate::virtio::VirtioDevice;
+use ::utils::eventfd::EventFd;
 
-impl Block {
-    fn process_activate_event(&self, event_manager: &mut EventManager) {
-        debug!("block: activate event");
-        if let Err(e) = self.activate_evt.read() {
-            error!("Failed to consume block activate event: {:?}", e);
-        }
-        let activate_fd = self.activate_evt.as_raw_fd();
-        // The subscriber must exist as we previously registered activate_evt via
-        // `interest_list()`.
-        let self_subscriber = match event_manager.subscriber(activate_fd) {
-            Ok(subscriber) => subscriber,
-            Err(e) => {
-                error!("Failed to process block activate evt: {:?}", e);
-                return;
-            }
-        };
-
-        // Interest list changes when the device is activated.
-        let interest_list = self.interest_list();
-        for event in interest_list {
-            event_manager
-                .register(event.data() as i32, event, self_subscriber.clone())
-                .unwrap_or_else(|e| {
-                    error!("Failed to register block events: {:?}", e);
-                });
-        }
-
-        event_manager.unregister(activate_fd).unwrap_or_else(|e| {
-            error!("Failed to unregister block activate evt: {:?}", e);
-        });
+impl SubscriberVirtioDevice for Block {
+    fn activate_fd(&self) -> &EventFd {
+        &self.activate_evt
     }
 }
 
